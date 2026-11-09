@@ -59,6 +59,8 @@ export default function Home() {
   const [translated, setTranslated] = useState(false);
   const settingsRef = useRef({ muted, ignoreBots, ignoreCommands, antiFlood, maxQueue, blockedWords, blockedUsers, template, rate, pitch, volume, voice });
   const lastSpokenAtRef = useRef(0);
+  const speechQueueRef = useRef<Array<{ text: string; rate: number; pitch: number; volume: number; voiceURI: string }>>([]);
+  const speakingRef = useRef(false);
 
   useEffect(() => {
     settingsRef.current = { muted, ignoreBots, ignoreCommands, antiFlood, maxQueue, blockedWords, blockedUsers, template, rate, pitch, volume, voice };
@@ -77,6 +79,33 @@ export default function Home() {
       voiceLang: selectedVoice?.lang || "pt-BR",
     }));
   }, [availableVoices, muted, pitch, rate, template, voice, volume]);
+
+  function processSpeechQueue() {
+    if (speakingRef.current || speechQueueRef.current.length === 0) return;
+    const next = speechQueueRef.current.shift();
+    if (!next) return;
+    speakingRef.current = true;
+    const utterance = new SpeechSynthesisUtterance(next.text);
+    const selectedVoice = window.speechSynthesis.getVoices().find((item) => item.voiceURI === next.voiceURI);
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+      utterance.lang = selectedVoice.lang;
+    } else {
+      utterance.lang = "pt-BR";
+    }
+    utterance.rate = next.rate;
+    utterance.pitch = next.pitch;
+    utterance.volume = next.volume;
+    utterance.onend = () => {
+      speakingRef.current = false;
+      processSpeechQueue();
+    };
+    utterance.onerror = () => {
+      speakingRef.current = false;
+      processSpeechQueue();
+    };
+    window.speechSynthesis.speak(utterance);
+  }
 
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
@@ -156,7 +185,16 @@ export default function Home() {
         const now = Date.now();
         if (!currentSettings.muted && (!currentSettings.antiFlood || now - lastSpokenAtRef.current > 1200)) {
           lastSpokenAtRef.current = now;
-          speak(currentSettings.template.replace("{user}", user).replace("{msg}", text), currentSettings.rate, currentSettings.pitch, currentSettings.volume, currentSettings.voice);
+          if (speechQueueRef.current.length < currentSettings.maxQueue) {
+            speechQueueRef.current.push({
+              text: currentSettings.template.replace("{user}", user).replace("{msg}", text),
+              rate: currentSettings.rate,
+              pitch: currentSettings.pitch,
+              volume: currentSettings.volume,
+              voiceURI: currentSettings.voice,
+            });
+            processSpeechQueue();
+          }
         }
       });
     });

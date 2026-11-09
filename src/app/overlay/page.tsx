@@ -48,26 +48,29 @@ function loadBrowserVoices(): Promise<SpeechSynthesisVoice[]> {
   });
 }
 
-async function speak(text: string, settings: OverlaySettings) {
+async function speak(text: string, settings: OverlaySettings): Promise<void> {
   if (!("speechSynthesis" in window)) return;
   const voices = await loadBrowserVoices();
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  const selectedVoice = voices.find((voice) => voice.voiceURI === settings.voiceURI)
-    || voices.find((voice) => voice.name === settings.voiceName)
-    || (settings.voiceURI && voices.find((voice) => voice.name.toLowerCase() === settings.voiceURI.toLowerCase()))
-    || (settings.voiceName && voices.find((voice) => voice.name.toLowerCase().includes(settings.voiceName.toLowerCase())))
-    || voices.find((voice) => voice.lang === settings.voiceLang);
-  if (selectedVoice) {
-    utterance.voice = selectedVoice;
-    utterance.lang = selectedVoice.lang;
-  } else {
-    utterance.lang = settings.voiceLang;
-  }
-  utterance.rate = settings.rate;
-  utterance.pitch = settings.pitch;
-  utterance.volume = settings.volume;
-  window.speechSynthesis.speak(utterance);
+  await new Promise<void>((resolve) => {
+    const utterance = new SpeechSynthesisUtterance(text);
+    const selectedVoice = voices.find((voice) => voice.voiceURI === settings.voiceURI)
+      || voices.find((voice) => voice.name === settings.voiceName)
+      || (settings.voiceURI && voices.find((voice) => voice.name.toLowerCase() === settings.voiceURI.toLowerCase()))
+      || (settings.voiceName && voices.find((voice) => voice.name.toLowerCase().includes(settings.voiceName.toLowerCase())))
+      || voices.find((voice) => voice.lang === settings.voiceLang);
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+      utterance.lang = selectedVoice.lang;
+    } else {
+      utterance.lang = settings.voiceLang;
+    }
+    utterance.rate = settings.rate;
+    utterance.pitch = settings.pitch;
+    utterance.volume = settings.volume;
+    utterance.onend = () => resolve();
+    utterance.onerror = () => resolve();
+    window.speechSynthesis.speak(utterance);
+  });
 }
 
 export default function OverlayPage() {
@@ -76,6 +79,19 @@ export default function OverlayPage() {
   const [connected, setConnected] = useState(false);
   const settingsRef = useRef<OverlaySettings>(defaultSettings);
   const lastSpokenAt = useRef(0);
+  const speechQueue = useRef<Array<{ text: string; settings: OverlaySettings }>>([]);
+  const speaking = useRef(false);
+
+  function processSpeechQueue() {
+    if (speaking.current || speechQueue.current.length === 0) return;
+    const next = speechQueue.current.shift();
+    if (!next) return;
+    speaking.current = true;
+    void speak(next.text, next.settings).finally(() => {
+      speaking.current = false;
+      processSpeechQueue();
+    });
+  }
 
   useEffect(() => {
     const loadSettings = () => {
@@ -129,8 +145,12 @@ export default function OverlayPage() {
         if (Date.now() - lastSpokenAt.current > 1200) {
           lastSpokenAt.current = Date.now();
           const settings = settingsRef.current;
-          if (!settings.muted) {
-            speak(settings.template.replace("{user}", user).replace("{msg}", text), settings);
+          if (!settings.muted && speechQueue.current.length < 20) {
+            speechQueue.current.push({
+              text: settings.template.replace("{user}", user).replace("{msg}", text),
+              settings,
+            });
+            processSpeechQueue();
           }
         }
       });
@@ -138,6 +158,8 @@ export default function OverlayPage() {
     return () => {
       window.removeEventListener("storage", loadSettings);
       socket.close();
+      speechQueue.current = [];
+      window.speechSynthesis.cancel();
     };
   }, []);
 
