@@ -65,6 +65,20 @@ export default function Home() {
   }, [antiFlood, blockedUsers, blockedWords, ignoreBots, ignoreCommands, maxQueue, muted, pitch, rate, template, voice, volume]);
 
   useEffect(() => {
+    const selectedVoice = availableVoices.find((item) => item.voiceURI === voice);
+    window.localStorage.setItem("twitchvoice-settings", JSON.stringify({
+      muted,
+      template,
+      rate,
+      pitch,
+      volume,
+      voiceURI: voice,
+      voiceName: selectedVoice?.name || "",
+      voiceLang: selectedVoice?.lang || "pt-BR",
+    }));
+  }, [availableVoices, muted, pitch, rate, template, voice, volume]);
+
+  useEffect(() => {
     if (!("speechSynthesis" in window)) return;
     const loadVoices = () => {
       const voices = window.speechSynthesis.getVoices()

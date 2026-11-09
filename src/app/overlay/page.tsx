@@ -9,13 +9,45 @@ type OverlayMessage = {
   color: string;
 };
 
-function speak(text: string) {
+type OverlaySettings = {
+  muted: boolean;
+  template: string;
+  rate: number;
+  pitch: number;
+  volume: number;
+  voiceURI: string;
+  voiceName: string;
+  voiceLang: string;
+};
+
+const defaultSettings: OverlaySettings = {
+  muted: false,
+  template: "{user} disse: {msg}",
+  rate: 1.05,
+  pitch: 1,
+  volume: 1,
+  voiceURI: "",
+  voiceName: "",
+  voiceLang: "pt-BR",
+};
+
+function speak(text: string, settings: OverlaySettings) {
   if (!("speechSynthesis" in window)) return;
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "pt-BR";
-  utterance.rate = 1.05;
-  utterance.volume = 1;
+  const voices = window.speechSynthesis.getVoices();
+  const selectedVoice = voices.find((voice) => voice.voiceURI === settings.voiceURI)
+    || voices.find((voice) => voice.name === settings.voiceName)
+    || voices.find((voice) => voice.lang === settings.voiceLang);
+  if (selectedVoice) {
+    utterance.voice = selectedVoice;
+    utterance.lang = selectedVoice.lang;
+  } else {
+    utterance.lang = settings.voiceLang;
+  }
+  utterance.rate = settings.rate;
+  utterance.pitch = settings.pitch;
+  utterance.volume = settings.volume;
   window.speechSynthesis.speak(utterance);
 }
 
@@ -23,9 +55,22 @@ export default function OverlayPage() {
   const [channel, setChannel] = useState("");
   const [messages, setMessages] = useState<OverlayMessage[]>([]);
   const [connected, setConnected] = useState(false);
+  const settingsRef = useRef<OverlaySettings>(defaultSettings);
   const lastSpokenAt = useRef(0);
 
   useEffect(() => {
+    const loadSettings = () => {
+      const saved = window.localStorage.getItem("twitchvoice-settings");
+      if (!saved) return;
+      try {
+        settingsRef.current = { ...defaultSettings, ...JSON.parse(saved) };
+      } catch {
+        settingsRef.current = defaultSettings;
+      }
+    };
+    loadSettings();
+    window.addEventListener("storage", loadSettings);
+
     const queryChannel = new URLSearchParams(window.location.search).get("channel")
       ?.toLowerCase().replace(/^#/, "").replace(/[^a-z0-9_]/g, "");
     if (!queryChannel) return;
@@ -53,11 +98,17 @@ export default function OverlayPage() {
         setMessages((current) => [...current.slice(-4), message]);
         if (Date.now() - lastSpokenAt.current > 1200) {
           lastSpokenAt.current = Date.now();
-          speak(`${user} disse: ${text}`);
+          const settings = settingsRef.current;
+          if (!settings.muted) {
+            speak(settings.template.replace("{user}", user).replace("{msg}", text), settings);
+          }
         }
       });
     });
-    return () => socket.close();
+    return () => {
+      window.removeEventListener("storage", loadSettings);
+      socket.close();
+    };
   }, []);
 
   return (
