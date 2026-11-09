@@ -31,13 +31,32 @@ const defaultSettings: OverlaySettings = {
   voiceLang: "pt-BR",
 };
 
-function speak(text: string, settings: OverlaySettings) {
+function loadBrowserVoices(): Promise<SpeechSynthesisVoice[]> {
+  const synthesis = window.speechSynthesis;
+  const currentVoices = synthesis.getVoices();
+  if (currentVoices.length) return Promise.resolve(currentVoices);
+  return new Promise((resolve) => {
+    const handleVoicesChanged = () => {
+      synthesis.removeEventListener("voiceschanged", handleVoicesChanged);
+      resolve(synthesis.getVoices());
+    };
+    synthesis.addEventListener("voiceschanged", handleVoicesChanged);
+    window.setTimeout(() => {
+      synthesis.removeEventListener("voiceschanged", handleVoicesChanged);
+      resolve(synthesis.getVoices());
+    }, 2000);
+  });
+}
+
+async function speak(text: string, settings: OverlaySettings) {
   if (!("speechSynthesis" in window)) return;
+  const voices = await loadBrowserVoices();
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
-  const voices = window.speechSynthesis.getVoices();
   const selectedVoice = voices.find((voice) => voice.voiceURI === settings.voiceURI)
     || voices.find((voice) => voice.name === settings.voiceName)
+    || (settings.voiceURI && voices.find((voice) => voice.name.toLowerCase() === settings.voiceURI.toLowerCase()))
+    || (settings.voiceName && voices.find((voice) => voice.name.toLowerCase().includes(settings.voiceName.toLowerCase())))
     || voices.find((voice) => voice.lang === settings.voiceLang);
   if (selectedVoice) {
     utterance.voice = selectedVoice;
