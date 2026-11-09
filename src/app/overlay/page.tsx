@@ -73,6 +73,23 @@ async function speak(text: string, settings: OverlaySettings): Promise<void> {
   });
 }
 
+function sanitizeForSpeech(text: string): string | null {
+  const withoutUrls = text.replace(/(?:https?:\/\/|www\.)\S+/gi, " ");
+  const withoutEmojis = withoutUrls
+    .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}\uFE0F\u200D]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!withoutEmojis || /^(?:https?:\/\/|www\.)/i.test(withoutEmojis)) return null;
+
+  const compact = withoutEmojis.replace(/[\s\W_]+/gu, "").toLowerCase();
+  if (compact.length >= 8) {
+    if (/(.)\1{4,}/u.test(compact)) return null;
+    if (/(.{1,3})\1{3,}/u.test(compact)) return null;
+    if (/^(?:k|h|a|e|o|r|ç|rs|kk|ha|ah|rsrs|rç){4,}$/u.test(compact)) return null;
+  }
+  return withoutEmojis;
+}
+
 export default function OverlayPage() {
   const [channel, setChannel] = useState("");
   const [messages, setMessages] = useState<OverlayMessage[]>([]);
@@ -140,14 +157,15 @@ export default function OverlayPage() {
         const user = line.match(/display-name=([^;]*)/)?.[1] || "Twitch";
         const color = line.match(/color=([^;]*)/)?.[1] || "#a875ff";
         if (!text) return;
+        const speechText = sanitizeForSpeech(text);
         const message = { id: Date.now() + Math.random(), user, text, color };
         setMessages((current) => [...current.slice(-4), message]);
         if (Date.now() - lastSpokenAt.current > 1200) {
           lastSpokenAt.current = Date.now();
           const settings = settingsRef.current;
-          if (!settings.muted && speechQueue.current.length < 20) {
+          if (!settings.muted && speechText && speechQueue.current.length < 20) {
             speechQueue.current.push({
-              text: settings.template.replace("{user}", user).replace("{msg}", text),
+              text: settings.template.replace("{user}", user).replace("{msg}", speechText),
               settings,
             });
             processSpeechQueue();

@@ -34,6 +34,23 @@ function speak(text: string, rate: number, pitch: number, volume: number, voiceU
   window.speechSynthesis.speak(utterance);
 }
 
+function sanitizeForSpeech(text: string): string | null {
+  const withoutUrls = text.replace(/(?:https?:\/\/|www\.)\S+/gi, " ");
+  const withoutEmojis = withoutUrls
+    .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}\uFE0F\u200D]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!withoutEmojis || /^(?:https?:\/\/|www\.)/i.test(withoutEmojis)) return null;
+
+  const compact = withoutEmojis.replace(/[\s\W_]+/gu, "").toLowerCase();
+  if (compact.length >= 8) {
+    if (/(.)\1{4,}/u.test(compact)) return null;
+    if (/(.{1,3})\1{3,}/u.test(compact)) return null;
+    if (/^(?:k|h|a|e|o|r|ç|rs|kk|ha|ah|rsrs|rç){4,}$/u.test(compact)) return null;
+  }
+  return withoutEmojis;
+}
+
 export default function Home() {
   const [channel, setChannel] = useState("");
   const [connected, setConnected] = useState(false);
@@ -164,6 +181,7 @@ export default function Home() {
         if (!messageMatch || !userMatch) return;
 
         const text = messageMatch[1];
+        const speechText = sanitizeForSpeech(text);
         const user = userMatch[1] || "Twitch user";
         const currentSettings = settingsRef.current;
         const blockedWordList = currentSettings.blockedWords.toLowerCase().split("\n").map((word) => word.trim()).filter(Boolean);
@@ -185,9 +203,9 @@ export default function Home() {
         const now = Date.now();
         if (!currentSettings.muted && (!currentSettings.antiFlood || now - lastSpokenAtRef.current > 1200)) {
           lastSpokenAtRef.current = now;
-          if (speechQueueRef.current.length < currentSettings.maxQueue) {
+          if (speechText && speechQueueRef.current.length < currentSettings.maxQueue) {
             speechQueueRef.current.push({
-              text: currentSettings.template.replace("{user}", user).replace("{msg}", text),
+              text: currentSettings.template.replace("{user}", user).replace("{msg}", speechText),
               rate: currentSettings.rate,
               pitch: currentSettings.pitch,
               volume: currentSettings.volume,
