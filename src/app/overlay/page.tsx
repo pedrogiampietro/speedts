@@ -61,9 +61,20 @@ export default function OverlayPage() {
   useEffect(() => {
     const loadSettings = () => {
       const saved = window.localStorage.getItem("twitchvoice-settings");
-      if (!saved) return;
+      const params = new URLSearchParams(window.location.search);
       try {
-        settingsRef.current = { ...defaultSettings, ...JSON.parse(saved) };
+        settingsRef.current = {
+          ...defaultSettings,
+          ...(saved ? JSON.parse(saved) : {}),
+          ...(params.has("muted") ? { muted: params.get("muted") === "true" } : {}),
+          ...(params.has("template") ? { template: params.get("template") || defaultSettings.template } : {}),
+          ...(params.has("rate") ? { rate: Number(params.get("rate")) || defaultSettings.rate } : {}),
+          ...(params.has("pitch") ? { pitch: Number(params.get("pitch")) || defaultSettings.pitch } : {}),
+          ...(params.has("volume") ? { volume: Number(params.get("volume")) || defaultSettings.volume } : {}),
+          ...(params.has("voiceURI") ? { voiceURI: params.get("voiceURI") || "" } : {}),
+          ...(params.has("voiceName") ? { voiceName: params.get("voiceName") || "" } : {}),
+          ...(params.has("voiceLang") ? { voiceLang: params.get("voiceLang") || defaultSettings.voiceLang } : {}),
+        };
       } catch {
         settingsRef.current = defaultSettings;
       }

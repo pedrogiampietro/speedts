@@ -194,6 +194,21 @@ export default function Home() {
     speak(template.replace("{user}", "TwitchVoice").replace("{msg}", "Este é um teste de voz para a sua live."), rate, pitch, volume, voice);
   }
 
+  function copyOverlayUrl() {
+    const params = new URLSearchParams({
+      channel,
+      voiceURI: voice,
+      voiceName: availableVoices.find((item) => item.voiceURI === voice)?.name || "",
+      voiceLang: availableVoices.find((item) => item.voiceURI === voice)?.lang || "pt-BR",
+      rate: String(rate),
+      pitch: String(pitch),
+      volume: String(volume),
+      template,
+      muted: String(muted),
+    });
+    void navigator.clipboard.writeText(`${window.location.origin}/overlay?${params.toString()}`);
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -251,7 +266,7 @@ export default function Home() {
           </aside>
 
           <section className="chat-card card">
-            <div className="chat-heading"><div><span className="section-kicker">MONITORAMENTO</span><div className="chat-title-row"><h2>Feed do chat</h2><span className="live-pill"><span /> AO VIVO</span></div></div><div className="chat-actions"><button title="Pop-out">⧉</button><button title="Limpar chat" onClick={() => setMessages([])}>⌫</button></div></div>
+            <div className="chat-heading"><div><span className="section-kicker">MONITORAMENTO</span><div className="chat-title-row"><h2>Feed do chat</h2><span className="live-pill"><span /> AO VIVO</span></div></div><div className="chat-actions"><button title="Copiar URL configurada para OBS" onClick={copyOverlayUrl}>OBS</button><button title="Limpar chat" onClick={() => setMessages([])}>⌫</button></div></div>
             <div className="chat-status"><div className={`sound-orb ${connectionState === "connected" ? "active" : ""}`}><span>{muted ? "◌" : "◉"}</span></div><div><strong>{connectionState === "connected" ? `Ouvindo #${channel}` : connectionState === "error" ? "Falha ao conectar" : connected ? `Conectando #${channel}` : "Aguardando conexão"}</strong><p>{connectionError || (connectionState === "connected" ? "As mensagens novas serão lidas automaticamente." : "Conecte um canal da Twitch para começar.")}</p></div><button className={`mute-button ${muted ? "muted" : ""}`} onClick={() => setMuted(!muted)} title={muted ? "Ativar voz" : "Silenciar voz"}>{muted ? "◌" : "◉"}</button></div>
             <div className="chat-toolbar"><span>Mensagens recentes</span><span className="queue-count"><span className="queue-dot" /> Fila: <b>{queueCount}</b></span></div>
             <div className="message-list">{visibleMessages.length ? visibleMessages.map((message) => <article className="message" key={message.id}><div className="avatar" style={{ background: `${message.color}20`, color: message.color }}>{message.user.slice(0, 1).toUpperCase()}</div><div className="message-content"><div className="message-meta"><strong style={{ color: message.color }}>{message.user}</strong>{message.badge && <span className="badge">{message.badge}</span>}<time>{message.time}</time></div><p>{translated ? "Esta es una demostración de traducción." : message.text}</p></div><button className="speak-message" onClick={() => speak(message.text, rate, pitch, volume, voice)} title="Ler mensagem">▷</button></article>) : <div className="empty-chat"><span>◌</span><p>Nenhuma mensagem visível.</p><small>Ajuste seus filtros ou conecte um canal.</small></div>}</div>
