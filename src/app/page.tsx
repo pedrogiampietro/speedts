@@ -17,21 +17,45 @@ const fallbackVoices = [
   { name: "Voz padrão do navegador", lang: "pt-BR", voiceURI: "" },
 ];
 
-function speak(text: string, rate: number, pitch: number, volume: number, voiceURI = "") {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  const selectedVoice = window.speechSynthesis.getVoices().find((voice) => voice.voiceURI === voiceURI);
-  if (selectedVoice) {
-    utterance.voice = selectedVoice;
-    utterance.lang = selectedVoice.lang;
-  } else {
-    utterance.lang = "pt-BR";
+const azureVoices = [
+  { name: "Microsoft Antônio Neural — Português (Brasil)", lang: "pt-BR", voiceURI: "azure:pt-BR-AntonioNeural" },
+  { name: "Microsoft Francisca Neural — Português (Brasil)", lang: "pt-BR", voiceURI: "azure:pt-BR-FranciscaNeural" },
+];
+
+async function speak(text: string, rate: number, pitch: number, volume: number, voiceURI = ""): Promise<void> {
+  if (voiceURI.startsWith("azure:")) {
+    const response = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, voice: voiceURI.slice(6), rate, pitch }),
+    });
+    if (!response.ok) throw new Error("Não foi possível gerar o áudio Azure.");
+    const audio = new Audio(URL.createObjectURL(await response.blob()));
+    audio.volume = volume;
+    await new Promise<void>((resolve, reject) => {
+      audio.onended = () => resolve();
+      audio.onerror = () => reject(new Error("Não foi possível reproduzir o áudio."));
+      void audio.play();
+    });
+    return;
   }
-  utterance.rate = rate;
-  utterance.pitch = pitch;
-  utterance.volume = volume;
-  window.speechSynthesis.speak(utterance);
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  await new Promise<void>((resolve) => {
+    const utterance = new SpeechSynthesisUtterance(text);
+    const selectedVoice = window.speechSynthesis.getVoices().find((voice) => voice.voiceURI === voiceURI);
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+      utterance.lang = selectedVoice.lang;
+    } else {
+      utterance.lang = "pt-BR";
+    }
+    utterance.rate = rate;
+    utterance.pitch = pitch;
+    utterance.volume = volume;
+    utterance.onend = () => resolve();
+    utterance.onerror = () => resolve();
+    window.speechSynthesis.speak(utterance);
+  });
 }
 
 function sanitizeForSpeech(text: string): string | null {
@@ -102,26 +126,10 @@ export default function Home() {
     const next = speechQueueRef.current.shift();
     if (!next) return;
     speakingRef.current = true;
-    const utterance = new SpeechSynthesisUtterance(next.text);
-    const selectedVoice = window.speechSynthesis.getVoices().find((item) => item.voiceURI === next.voiceURI);
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
-      utterance.lang = selectedVoice.lang;
-    } else {
-      utterance.lang = "pt-BR";
-    }
-    utterance.rate = next.rate;
-    utterance.pitch = next.pitch;
-    utterance.volume = next.volume;
-    utterance.onend = () => {
+    void speak(next.text, next.rate, next.pitch, next.volume, next.voiceURI).catch(() => undefined).finally(() => {
       speakingRef.current = false;
       processSpeechQueue();
-    };
-    utterance.onerror = () => {
-      speakingRef.current = false;
-      processSpeechQueue();
-    };
-    window.speechSynthesis.speak(utterance);
+    });
   }
 
   useEffect(() => {
@@ -247,7 +255,7 @@ export default function Home() {
   }
 
   function tryVoice() {
-    speak(template.replace("{user}", "TwitchVoice").replace("{msg}", "Este é um teste de voz para a sua live."), rate, pitch, volume, voice);
+    void speak(template.replace("{user}", "TwitchVoice").replace("{msg}", "Este é um teste de voz para a sua live."), rate, pitch, volume, voice).catch(() => undefined);
   }
 
   function copyOverlayUrl() {
@@ -297,7 +305,7 @@ export default function Home() {
             {panel === "voice" && <div className="settings-body">
               <div className="setting-title"><label htmlFor="voice">Voz selecionada</label><button className="reset-button" onClick={resetVoice}>↺ Restaurar</button></div>
               <select id="voice" value={voice} onChange={(event) => setVoice(event.target.value)}>
-                {(availableVoices.length ? availableVoices : fallbackVoices).map((item) => <option key={item.voiceURI || item.name} value={item.voiceURI}>{item.name} ({item.lang})</option>)}
+                {[...azureVoices, ...(availableVoices.length ? availableVoices : fallbackVoices)].map((item) => <option key={item.voiceURI || item.name} value={item.voiceURI}>{item.name} ({item.lang})</option>)}
               </select>
               <p className="helper-text voice-help">{availableVoices.length ? "Vozes instaladas no seu navegador e sistema." : "Nenhuma voz carregada ainda. Clique novamente em Ouvir exemplo."}</p>
               <label className="field-label" htmlFor="template">Formato da mensagem <span title="Use {user} e {msg}">ⓘ</span></label>

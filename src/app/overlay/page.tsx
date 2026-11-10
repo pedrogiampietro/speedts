@@ -49,6 +49,22 @@ function loadBrowserVoices(): Promise<SpeechSynthesisVoice[]> {
 }
 
 async function speak(text: string, settings: OverlaySettings): Promise<void> {
+  if (settings.voiceURI.startsWith("azure:")) {
+    const response = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, voice: settings.voiceURI.slice(6), rate: settings.rate, pitch: settings.pitch }),
+    });
+    if (!response.ok) throw new Error("Não foi possível gerar o áudio Azure.");
+    const audio = new Audio(URL.createObjectURL(await response.blob()));
+    audio.volume = settings.volume;
+    await new Promise<void>((resolve, reject) => {
+      audio.onended = () => resolve();
+      audio.onerror = () => reject(new Error("Não foi possível reproduzir o áudio."));
+      void audio.play();
+    });
+    return;
+  }
   if (!("speechSynthesis" in window)) return;
   const voices = await loadBrowserVoices();
   await new Promise<void>((resolve) => {
@@ -104,7 +120,7 @@ export default function OverlayPage() {
     const next = speechQueue.current.shift();
     if (!next) return;
     speaking.current = true;
-    void speak(next.text, next.settings).finally(() => {
+    void speak(next.text, next.settings).catch(() => undefined).finally(() => {
       speaking.current = false;
       processSpeechQueue();
     });
